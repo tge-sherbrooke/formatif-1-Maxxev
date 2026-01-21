@@ -1,4 +1,4 @@
-# Formatif F1 — Introduction au Raspberry Pi et BMP280
+# Formatif F1 — Introduction au Raspberry Pi et capteurs Adafruit
 
 **Cours** : 243-413-SH — Introduction aux objets connectés
 **Semaine** : 1
@@ -10,123 +10,177 @@
 ## Objectif
 
 Ce formatif vise à vérifier que vous êtes capable de :
-1. ✅ Utiliser SSH pour vous connecter au Raspberry Pi (depuis Windows)
-2. ✅ Installer les bibliothèques Python nécessaires (BMP280)
+1. ✅ Configurer SSH sans mot de passe (depuis Windows)
+2. ✅ Installer UV et gérer les dépendances Python
 3. ✅ Détecter un capteur I²C avec `i2cdetect`
-4. ✅ Lire un capteur de température, pression et altitude (BMP280)
+4. ✅ Lire un capteur BMP280 (température, pression, altitude)
+5. ✅ Contrôler un NeoSlider (potentiomètre + LEDs)
 
 ---
 
 ## Instructions
 
-### Étape 1 : Connexion SSH (depuis Windows PowerShell)
+### Étape 1 : Connexion SSH sans mot de passe (Windows PowerShell)
 
-Connectez-vous au Raspberry Pi via SSH depuis PowerShell :
+#### Générer une clé SSH
 
 ```powershell
-ssh jdupont@192.168.1.xxx
+ssh-keygen -t ed25519 -C "mon-raspberry-pi"
 ```
 
-Remplacez `jdupont` par votre nom d'utilisateur créé dans Raspberry Pi Imager et `192.168.1.xxx` par l'adresse IP fournie en classe.
+- Appuyez **Entrée** pour accepter l'emplacement par défaut
+- Appuyez **Entrée** deux fois pour laisser le mot de passe vide
 
-**Pour trouver l'adresse IP** :
+#### Copier la clé sur le Raspberry Pi
+
 ```powershell
-arp -a | findstr "b8-27-eb"
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh utilisateur@HOSTNAME.local "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ```
 
-### Étape 2 : Créer votre espace de travail
+> ⚠️ Remplacez `HOSTNAME` par le nom de votre Raspberry Pi et `utilisateur` par votre nom d'utilisateur.
 
-```bash
-mkdir -p ~/iot-lab
-cd ~/iot-lab
+#### Tester la connexion
+
+```powershell
+ssh utilisateur@HOSTNAME.local
 ```
 
-### Étape 3 : Installer les dépendances
+Vous devriez vous connecter **sans entrer de mot de passe**.
+
+---
+
+### Étape 2 : Installer UV
+
+Une fois connecté en SSH sur le Raspberry Pi :
 
 ```bash
-pip3 install --upgrade pip
-pip3 install adafruit-circuitpython-bmp adafruit-blinka
+# Installer UV
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Recharger le shell
+source ~/.bashrc
+
+# Vérifier l'installation
+uv --version
 ```
 
-### Étape 4 : Vérifier le capteur BMP280
+---
+
+### Étape 3 : Activer I2C et vérifier les capteurs
 
 ```bash
+# Activer I2C
+sudo raspi-config nonint do_i2c 0
+
+# Installer les outils I2C
+sudo apt update && sudo apt install -y i2c-tools
+
+# Scanner le bus I2C
 sudo i2cdetect -y 1
 ```
 
-Vous devriez voir `77` à l'adresse `0x77` (capteur BMP280).
+Vous devriez voir :
+- `77` pour le BMP280
+- `30` pour le NeoSlider
 
-⚠️ **IMPORTANT** : Le BMP280 fonctionne UNIQUEMENT en 3.3V ! Si VIN est connecté au 5V, le capteur ne répondra pas.
+⚠️ **IMPORTANT** : Les capteurs fonctionnent UNIQUEMENT en 3.3V !
 
-### Étape 5 : Créer le script de lecture
+---
 
-Créez le fichier `capteur.py` dans `~/iot-lab/` avec le contenu suivant :
+### Étape 4 : Tester le capteur BMP280
+
+Créez le fichier `test_bmp280.py` :
 
 ```python
-#!/usr/bin/env python3
-"""
-Lecture du capteur BMP280 - Température, Pression et Altitude
-Formatif F1 - Semaine 1
-"""
+# /// script
+# requires-python = ">=3.9"
+# dependencies = ["adafruit-circuitpython-bmp280", "adafruit-blinka"]
+# ///
+"""Test du capteur BMP280 via STEMMA QT/I2C."""
 
 import board
-import adafruit_bmp
+import adafruit_bmp280
 
-# Création de l'objet capteur
 i2c = board.I2C()
-sensor = adafruit_bmp.BMP280_I2C(i2c)
+sensor = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x77)
 
-# Lecture des valeurs
-temperature = sensor.temperature
-pression = sensor.pressure
-altitude = sensor.altitude
-
-# Affichage
-print(f"Température : {temperature:.2f} °C")
-print(f"Pression : {pression:.2f} hPa")
-print(f"Altitude : {altitude:.1f} m")
+print(f"Température: {sensor.temperature:.1f} °C")
+print(f"Pression: {sensor.pressure:.1f} hPa")
+print(f"Altitude: {sensor.altitude:.1f} m")
 ```
 
-### Étape 6 : Exécuter et valider
+Exécutez :
 
 ```bash
-python3 capteur.py
+uv run test_bmp280.py
 ```
 
-Prenez une capture d'écran des résultats !
+---
+
+### Étape 5 : Tester le NeoSlider
+
+Créez le fichier `test_neoslider.py` :
+
+```python
+# /// script
+# requires-python = ">=3.9"
+# dependencies = ["adafruit-circuitpython-seesaw", "adafruit-blinka"]
+# ///
+"""Test du NeoSlider - Animation arc-en-ciel sur les LEDs."""
+
+import board
+import time
+from rainbowio import colorwheel
+from adafruit_seesaw.seesaw import Seesaw
+from adafruit_seesaw import neopixel
+
+# Configuration NeoSlider
+i2c = board.I2C()
+neoslider = Seesaw(i2c, 0x30)
+pixels = neopixel.NeoPixel(neoslider, 14, 4, pixel_order=neopixel.GRB)
+
+# Position dans la roue des couleurs
+color_pos = 0
+
+while True:
+    # Remplir les pixels avec la couleur actuelle
+    pixels.fill(colorwheel(color_pos))
+    
+    # Avancer vers la couleur suivante
+    color_pos = (color_pos + 1) % 256
+    
+    time.sleep(0.02)
+```
+
+Exécutez :
+
+```bash
+uv run test_neoslider.py
+```
+
+**Validation** : Les 4 LEDs affichent une animation arc-en-ciel. Appuyez `Ctrl+C` pour arrêter.
+
+---
+
+## Câblage STEMMA QT
+
+| Fil | Raspberry Pi |
+|-----|--------------|
+| Rouge (VIN) | 3.3V |
+| Noir (GND) | GND |
+| Bleu (SDA) | GPIO 2 |
+| Jaune (SCL) | GPIO 3 |
+
+⚠️ **VIN doit être connecté à 3.3V, PAS 5V !**
 
 ---
 
 ## Validation automatique
 
-Pour recevoir une rétroaction automatique :
-
-1. Poussez votre code sur GitHub (ce dépôt)
-2. Les tests s'exécuteront automatiquement via GitHub Actions
-3. Consultez l'onglet "Actions" pour voir les résultats
-4. Corrigez selon la rétroaction fournie
-
-### Tests automatisés
-
-Les tests vérifient que :
-
-| Test | Vérification | Points |
-|------|-------------|--------|
-| `test_requirements_present` | Fichier requirements.txt complet | 25% |
-| `test_import_board` | Module board importable | 15% |
-| `test_import_bmp280` | Module adafruit_bmp importable | 10% |
-| `test_script_exists` | Script capteur.py présent | 15% |
-| `test_script_has_required_imports` | Imports corrects | 15% |
-| `test_script_creates_sensor` | Objet capteur BMP280 créé | 15% |
-| `test_script_syntax_valid` | Syntaxe Python valide | 10% |
-| `test_script_prints_output` | Contient des print() pour sortie | 15% |
-| `test_script_uses_sensor_methods` | Utilise .temperature, .pressure, .altitude | 15% |
-
-**⚠️ IMPORTANT**: Les tests GitHub Actions vérifient uniquement le **code** (syntaxe, structure, imports).
-Pour valider que le capteur fonctionne **réellement** sur le Raspberry Pi, exécutez :
+Pour valider sur le Raspberry Pi :
 
 ```bash
-bash validate_pi.sh
+uv run validate_setup.py
 ```
 
 ---
@@ -135,29 +189,35 @@ bash validate_pi.sh
 
 Dans ce dépôt, vous devez avoir :
 
-- [ ] `requirements.txt` — Liste des dépendances Python
-- [ ] `capteur.py` — Votre script de lecture du capteur BMP280
-- [ ] `captures/` — Dossier avec vos captures d'écran (optionnel pour l'auto-correction)
+- [ ] `test_bmp280.py` — Script de lecture du capteur BMP280
+- [ ] `test_neoslider.py` — Script de test du NeoSlider
+- [ ] `captures/` — Captures d'écran (optionnel)
+
+---
+
+## Résumé des commandes
+
+```bash
+# Sur Windows PowerShell (avant connexion)
+ssh-keygen -t ed25519 -C "mon-raspberry-pi"
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh utilisateur@HOSTNAME.local "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+ssh utilisateur@HOSTNAME.local
+
+# Sur le Raspberry Pi
+curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.bashrc
+sudo apt install -y i2c-tools
+sudo raspi-config nonint do_i2c 0
+sudo i2cdetect -y 1
+uv run test_bmp280.py
+uv run test_neoslider.py
+```
 
 ---
 
 ## Ressources
 
-- [Guide de l'étudiant](../../deliverables/activites/semaine-1/labo/guide-étudiant.md)
-- [Guide de dépannage](../../deliverables/activites/semaine-1/labo/guide-depannage.md)
-- [Contenu d'apprentissage](../../deliverables/activites/semaine-1/theory/contenu-apprentissage.md)
-
----
-
-## Rétroaction
-
-Après avoir poussé votre code :
-
-1. Allez dans l'onglet **Actions** de ce dépôt
-2. Cliquez sur le workflow le plus récent
-3. Lisez la rétroaction dans les logs de tests
-
-**Note** : Ce formatif n'est pas noté. Son but est de vous donner une rétroaction rapide sur votre compréhension des concepts de base.
+- [Guide de configuration LLM](guide-configuration-rpi.md)
+- [Guide étudiant](guide-etudiant-rpi.md)
 
 ---
 
