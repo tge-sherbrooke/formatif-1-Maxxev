@@ -241,6 +241,43 @@ def run_hardware_tests():
     return True
 
 
+def update_gitignore():
+    """
+    Met à jour .gitignore pour permettre de commettre les marqueurs de tests.
+    Supprime la ligne '.test_markers/' du .gitignore pour permettre aux étudiants
+    de pousser les marqueurs créés par run_tests.py.
+    """
+    gitignore_path = Path(__file__).parent / ".gitignore"
+    marker_dir = Path(__file__).parent / ".test_markers"
+
+    # Si les marqueurs existent, on permet de les commettre
+    if not marker_dir.exists():
+        return
+
+    if not gitignore_path.exists():
+        return
+
+    # Lire le .gitignore actuel
+    lines = gitignore_path.read_text().splitlines()
+
+    # Filtrer les lignes qui excluent .test_markers
+    new_lines = []
+    modified = False
+    for line in lines:
+        # Ignorer les patterns qui excluent .test_markers ou son contenu
+        if '.test_markers' in line and not line.strip().startswith('#'):
+            # Remplacer par un commentaire explicatif
+            if not modified:
+                new_lines.append('# .test_markers/ is now allowed (created by run_tests.py)')
+                modified = True
+        else:
+            new_lines.append(line)
+
+    if modified:
+        gitignore_path.write_text('\n'.join(new_lines) + '\n')
+        print_success(".gitignore mis à jour - les marqueurs peuvent être commités")
+
+
 def create_test_summary():
     """
     Crée un résumé des tests pour GitHub Actions.
@@ -252,7 +289,7 @@ def create_test_summary():
 
     summary = f"""Test Summary for Formatif F1
 Generated: {datetime.now().isoformat()}
-Tests Run: {len(markars)}
+Tests Run: {len(markers)}
 
 Markers:
 """
@@ -295,6 +332,10 @@ def main():
 
     if all_passed:
         print(f"{Colors.GREEN}{Colors.BOLD}🎉 TOUS LES TESTS SONT PASSÉS!{Colors.END}")
+
+        # Met à jour .gitignore pour permettre de commettre les marqueurs
+        update_gitignore()
+
         print("\n📤 Vous pouvez maintenant pousser vos modifications:")
         print("   git add .")
         print("   git commit -m \"feat: tests locaux passés\"")
